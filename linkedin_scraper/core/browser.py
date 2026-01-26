@@ -70,22 +70,50 @@ class BrowserManager:
         try:
             self._playwright = await async_playwright().start()
             
-            # Launch browser
+            # Launch browser with anti-detection settings
+            launch_args = [
+                '--disable-blink-features=AutomationControlled',
+                '--disable-dev-shm-usage',
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-web-security',
+                '--disable-features=IsolateOrigins,site-per-process'
+            ]
+            
+            # Merge custom args if provided
+            if 'args' in self.launch_options:
+                launch_args.extend(self.launch_options['args'])
+                del self.launch_options['args']
+            
             self._browser = await self._playwright.chromium.launch(
                 headless=self.headless,
                 slow_mo=self.slow_mo,
+                args=launch_args,
                 **self.launch_options
             )
             
             logger.info(f"Browser launched (headless={self.headless})")
             
-            # Create context
+            # Create context with anti-detection settings
             context_options: Dict[str, Any] = {
                 "viewport": self.viewport,
+                "user_agent": self.user_agent or 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+                "locale": 'pl-PL',
+                "timezone_id": 'Europe/Warsaw',
+                "permissions": ['geolocation'],
+                "extra_http_headers": {
+                    'Accept-Language': 'pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                    'Accept-Encoding': 'gzip, deflate, br',
+                    'Connection': 'keep-alive',
+                    'Upgrade-Insecure-Requests': '1',
+                    'Sec-Fetch-Dest': 'document',
+                    'Sec-Fetch-Mode': 'navigate',
+                    'Sec-Fetch-Site': 'none',
+                    'Sec-Fetch-User': '?1',
+                    'Cache-Control': 'max-age=0'
+                }
             }
-            
-            if self.user_agent:
-                context_options["user_agent"] = self.user_agent
             
             if self.proxy:
                 context_options["proxy"] = self.proxy
@@ -95,11 +123,42 @@ class BrowserManager:
             # Create initial page
             self._page = await self._context.new_page()
             
+            # Inject anti-detection scripts
+            await self._page.add_init_script("""
+                // Hide webdriver property
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined
+                });
+                
+                // Mock chrome object
+                window.chrome = {
+                    runtime: {}
+                };
+                
+                // Mock plugins
+                Object.defineProperty(navigator, 'plugins', {
+                    get: () => [1, 2, 3, 4, 5]
+                });
+                
+                // Mock languages
+                Object.defineProperty(navigator, 'languages', {
+                    get: () => ['pl-PL', 'pl', 'en-US', 'en']
+                });
+                
+                // Mock permissions
+                const originalQuery = window.navigator.permissions.query;
+                window.navigator.permissions.query = (parameters) => (
+                    parameters.name === 'notifications' ?
+                        Promise.resolve({ state: Notification.permission }) :
+                        originalQuery(parameters)
+                );
+            """)
+            
             # Set up resource blocking if configured
             if self.block_resources:
                 await self._setup_resource_blocking(self._page)
 
-            logger.info("Browser context and page created")
+            logger.info("Browser context and page created with anti-detection")
             
         except Exception as e:
             await self.close()
@@ -151,6 +210,20 @@ class BrowserManager:
             raise RuntimeError("Browser context not initialized. Call start() first.")
         
         page = await self._context.new_page()
+        
+        # Add anti-detection scripts to new page
+        await page.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined
+            });
+            window.chrome = { runtime: {} };
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [1, 2, 3, 4, 5]
+            });
+            Object.defineProperty(navigator, 'languages', {
+                get: () => ['pl-PL', 'pl', 'en-US', 'en']
+            });
+        """)
 
         if self.block_resources:
             await self._setup_resource_blocking(page)
@@ -230,17 +303,40 @@ class BrowserManager:
         if not self._browser:
             raise RuntimeError("Browser not started")
         
-        self._context = await self._browser.new_context(
-            storage_state=filepath,
-            viewport=self.viewport,
-            user_agent=self.user_agent,
-            proxy=self.proxy
-        )
+        context_options: Dict[str, Any] = {
+            "storage_state": filepath,
+            "viewport": self.viewport,
+            "user_agent": self.user_agent or 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            "locale": 'pl-PL',
+            "timezone_id": 'Europe/Warsaw',
+            "extra_http_headers": {
+                'Accept-Language': 'pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7',
+            }
+        }
+        
+        if self.proxy:
+            context_options["proxy"] = self.proxy
+        
+        self._context = await self._browser.new_context(**context_options)
         
         # Create new page
         if self._page:
             await self._page.close()
         self._page = await self._context.new_page()
+        
+        # Add anti-detection scripts
+        await self._page.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined
+            });
+            window.chrome = { runtime: {} };
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [1, 2, 3, 4, 5]
+            });
+            Object.defineProperty(navigator, 'languages', {
+                get: () => ['pl-PL', 'pl', 'en-US', 'en']
+            });
+        """)
 
         # Apply resource blocking
         if self.block_resources:

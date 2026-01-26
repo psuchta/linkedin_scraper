@@ -116,7 +116,6 @@ class PersonScraper(BaseScraper):
                 return True
 
             h3_text = await self.safe_extract_text('a.pv-open-to-carousel-card__content h3', default="")
-            breakpoint()
             if "OPEN TO WORK" in h3_text.upper():
                 return True
 
