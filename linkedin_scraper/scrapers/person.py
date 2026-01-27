@@ -6,6 +6,7 @@ from urllib.parse import urljoin
 from playwright.async_api import Page
 
 from .base import BaseScraper
+from .skill import SkillScraper
 from ..models import Person, Experience, Education, Accomplishment
 from ..callbacks import ProgressCallback, SilentCallback
 from ..core.exceptions import ScrapingError
@@ -65,17 +66,22 @@ class PersonScraper(BaseScraper):
             about = await self._get_about()
             await self.callback.on_progress("Got about section", 30)
             
-            # Scroll to load content
+            # # Scroll to load content
             await self.scroll_page_to_half()
             await self.scroll_page_to_bottom(pause_time=0.5, max_scrolls=3)
             
-            # Get experiences
+            # # Get experiences
             experiences = await self._get_experiences(linkedin_url)
             await self.callback.on_progress(f"Got {len(experiences)} experiences", 60)
             
-            # Get educations
+            # # Get educations
             educations = await self._get_educations(linkedin_url)
             await self.callback.on_progress(f"Got {len(educations)} educations", 80)
+            
+            # Get skills
+            skill_scraper = SkillScraper(self.page, self.callback)
+            skills = await skill_scraper.scrape(linkedin_url)
+            await self.callback.on_progress(f"Got {len(skills)} skills", 90)
             
             # Build Person model
             person = Person(
@@ -86,6 +92,7 @@ class PersonScraper(BaseScraper):
                 open_to_work=open_to_work,
                 experiences=experiences,
                 educations=educations,
+                skills=skills,
             )
             
             await self.callback.on_progress("Scraping complete", 100)
