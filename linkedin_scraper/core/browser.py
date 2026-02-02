@@ -98,11 +98,11 @@ class BrowserManager:
             context_options: Dict[str, Any] = {
                 "viewport": self.viewport,
                 "user_agent": self.user_agent or 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-                "locale": 'pl-PL',
+                "locale": 'en-US',
                 "timezone_id": 'Europe/Warsaw',
                 "permissions": ['geolocation'],
                 "extra_http_headers": {
-                    'Accept-Language': 'pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7',
+                    'Accept-Language': 'en-US,en;q=0.9',
                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
                     'Accept-Encoding': 'gzip, deflate, br',
                     'Connection': 'keep-alive',
@@ -142,7 +142,7 @@ class BrowserManager:
                 
                 // Mock languages
                 Object.defineProperty(navigator, 'languages', {
-                    get: () => ['pl-PL', 'pl', 'en-US', 'en']
+                    get: () => ['en-US', 'en']
                 });
                 
                 // Mock permissions
