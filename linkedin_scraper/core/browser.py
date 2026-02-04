@@ -21,6 +21,8 @@ class BrowserManager:
         slow_mo: int = 0,
         viewport: Optional[Dict[str, int]] = None,
         user_agent: Optional[str] = None,
+        proxy: Optional[Dict[str, str]] = None,
+        block_resources: Optional[list] = None,
         **launch_options: Any
     ):
         """
@@ -31,12 +33,21 @@ class BrowserManager:
             slow_mo: Slow down operations by specified milliseconds
             viewport: Browser viewport size (default: 1280x720)
             user_agent: Custom user agent string
+            proxy: Proxy configuration dict with 'server', 'username', 'password'
+                   Example: {"server": "http://proxy.example.com:8080",
+                            "username": "user", "password": "pass"}
+            block_resources: List of resource types to block
+                   Options: 'image', 'stylesheet', 'font', 'media', 'websocket', 'manifest', 'other'
+                   Example: ['image', 'stylesheet'] to block images and CSS
+                   For JavaScript only: ['image', 'stylesheet', 'font', 'media', 'websocket', 'manifest', 'other']
             **launch_options: Additional Playwright launch options
         """
         self.headless = headless
         self.slow_mo = slow_mo
         self.viewport = viewport or {"width": 1280, "height": 720}
         self.user_agent = user_agent
+        self.proxy = proxy
+        self.block_resources = block_resources or []
         self.launch_options = launch_options
         
         self._playwright: Optional[Playwright] = None
@@ -59,34 +70,111 @@ class BrowserManager:
         try:
             self._playwright = await async_playwright().start()
             
-            # Launch browser
+            # Launch browser with anti-detection settings
+            launch_args = [
+                '--disable-blink-features=AutomationControlled',
+                '--disable-dev-shm-usage',
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-web-security',
+                '--disable-features=IsolateOrigins,site-per-process'
+            ]
+            
+            # Merge custom args if provided
+            if 'args' in self.launch_options:
+                launch_args.extend(self.launch_options['args'])
+                del self.launch_options['args']
+            
             self._browser = await self._playwright.chromium.launch(
                 headless=self.headless,
                 slow_mo=self.slow_mo,
+                args=launch_args,
                 **self.launch_options
             )
             
             logger.info(f"Browser launched (headless={self.headless})")
             
-            # Create context
+            # Create context with anti-detection settings
             context_options: Dict[str, Any] = {
                 "viewport": self.viewport,
+                "user_agent": self.user_agent or 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+                "locale": 'en-US',
+                "timezone_id": 'Europe/Warsaw',
+                "permissions": ['geolocation'],
+                "extra_http_headers": {
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                    'Accept-Encoding': 'gzip, deflate, br',
+                    'Connection': 'keep-alive',
+                    'Upgrade-Insecure-Requests': '1',
+                    'Sec-Fetch-Dest': 'document',
+                    'Sec-Fetch-Mode': 'navigate',
+                    'Sec-Fetch-Site': 'none',
+                    'Sec-Fetch-User': '?1',
+                    'Cache-Control': 'max-age=0'
+                }
             }
             
-            if self.user_agent:
-                context_options["user_agent"] = self.user_agent
-            
+            if self.proxy:
+                context_options["proxy"] = self.proxy
+
             self._context = await self._browser.new_context(**context_options)
             
             # Create initial page
             self._page = await self._context.new_page()
             
-            logger.info("Browser context and page created")
+            # Inject anti-detection scripts
+            await self._page.add_init_script("""
+                // Hide webdriver property
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined
+                });
+                
+                // Mock chrome object
+                window.chrome = {
+                    runtime: {}
+                };
+                
+                // Mock plugins
+                Object.defineProperty(navigator, 'plugins', {
+                    get: () => [1, 2, 3, 4, 5]
+                });
+                
+                // Mock languages
+                Object.defineProperty(navigator, 'languages', {
+                    get: () => ['en-US', 'en']
+                });
+                
+                // Mock permissions
+                const originalQuery = window.navigator.permissions.query;
+                window.navigator.permissions.query = (parameters) => (
+                    parameters.name === 'notifications' ?
+                        Promise.resolve({ state: Notification.permission }) :
+                        originalQuery(parameters)
+                );
+            """)
+            
+            # Set up resource blocking if configured
+            if self.block_resources:
+                await self._setup_resource_blocking(self._page)
+
+            logger.info("Browser context and page created with anti-detection")
             
         except Exception as e:
             await self.close()
             raise NetworkError(f"Failed to start browser: {e}")
     
+    async def _setup_resource_blocking(self, page: Page) -> None:
+        """Set up resource blocking for a page."""
+        async def handle_route(route):
+            if route.request.resource_type in self.block_resources:
+                await route.abort()
+            else:
+                await route.continue_()
+
+        await page.route("**/*", handle_route)
+        logger.info(f"Resource blocking enabled for: {', '.join(self.block_resources)}")
+
     async def close(self) -> None:
         """Close browser and cleanup resources."""
         try:
@@ -122,6 +210,24 @@ class BrowserManager:
             raise RuntimeError("Browser context not initialized. Call start() first.")
         
         page = await self._context.new_page()
+        
+        # Add anti-detection scripts to new page
+        await page.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined
+            });
+            window.chrome = { runtime: {} };
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [1, 2, 3, 4, 5]
+            });
+            Object.defineProperty(navigator, 'languages', {
+                get: () => ['pl-PL', 'pl', 'en-US', 'en']
+            });
+        """)
+
+        if self.block_resources:
+            await self._setup_resource_blocking(page)
+
         return page
     
     @property
@@ -197,17 +303,45 @@ class BrowserManager:
         if not self._browser:
             raise RuntimeError("Browser not started")
         
-        self._context = await self._browser.new_context(
-            storage_state=filepath,
-            viewport=self.viewport,
-            user_agent=self.user_agent
-        )
+        context_options: Dict[str, Any] = {
+            "storage_state": filepath,
+            "viewport": self.viewport,
+            "user_agent": self.user_agent or 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            "locale": 'pl-PL',
+            "timezone_id": 'Europe/Warsaw',
+            "extra_http_headers": {
+                'Accept-Language': 'pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7',
+            }
+        }
+        
+        if self.proxy:
+            context_options["proxy"] = self.proxy
+        
+        self._context = await self._browser.new_context(**context_options)
         
         # Create new page
         if self._page:
             await self._page.close()
         self._page = await self._context.new_page()
         
+        # Add anti-detection scripts
+        await self._page.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined
+            });
+            window.chrome = { runtime: {} };
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [1, 2, 3, 4, 5]
+            });
+            Object.defineProperty(navigator, 'languages', {
+                get: () => ['pl-PL', 'pl', 'en-US', 'en']
+            });
+        """)
+
+        # Apply resource blocking
+        if self.block_resources:
+            await self._setup_resource_blocking(self._page)
+
         self._is_authenticated = True
         
         logger.info(f"Session loaded from {filepath}")

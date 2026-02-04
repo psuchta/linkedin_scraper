@@ -27,6 +27,7 @@ from .scrapers import (
     CompanyScraper,
     JobScraper,
     JobSearchScraper,
+    PeopleSearchScraper,
 )
 
 # Callbacks
@@ -66,6 +67,7 @@ __all__ = [
     'CompanyScraper',
     'JobScraper',
     'JobSearchScraper',
+    'PeopleSearchScraper'
     # Exceptions
     'LinkedInScraperException',
     'AuthenticationError',

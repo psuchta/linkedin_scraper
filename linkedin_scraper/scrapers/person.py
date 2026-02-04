@@ -6,6 +6,7 @@ from urllib.parse import urljoin
 from playwright.async_api import Page
 
 from .base import BaseScraper
+from .skill import SkillScraper
 from ..models import Person, Experience, Education, Accomplishment
 from ..callbacks import ProgressCallback, SilentCallback
 from ..core.exceptions import ScrapingError
@@ -65,17 +66,22 @@ class PersonScraper(BaseScraper):
             about = await self._get_about()
             await self.callback.on_progress("Got about section", 30)
             
-            # Scroll to load content
+            # # Scroll to load content
             await self.scroll_page_to_half()
             await self.scroll_page_to_bottom(pause_time=0.5, max_scrolls=3)
             
-            # Get experiences
+            # # Get experiences
             experiences = await self._get_experiences(linkedin_url)
             await self.callback.on_progress(f"Got {len(experiences)} experiences", 60)
             
-            # Get educations
+            # # Get educations
             educations = await self._get_educations(linkedin_url)
             await self.callback.on_progress(f"Got {len(educations)} educations", 80)
+            
+            # Get skills
+            skill_scraper = SkillScraper(self.page, self.callback)
+            skills = await skill_scraper.scrape(linkedin_url)
+            await self.callback.on_progress(f"Got {len(skills)} skills", 90)
             
             # Build Person model
             person = Person(
@@ -86,6 +92,7 @@ class PersonScraper(BaseScraper):
                 open_to_work=open_to_work,
                 experiences=experiences,
                 educations=educations,
+                skills=skills,
             )
             
             await self.callback.on_progress("Scraping complete", 100)
@@ -110,9 +117,16 @@ class PersonScraper(BaseScraper):
     async def _check_open_to_work(self) -> bool:
         """Check if profile has open to work badge."""
         try:
-            # Look for open to work indicator
+            # Method 1: Check image title
             img_title = await self.get_attribute_safe('.pv-top-card-profile-picture img', 'title', default="")
-            return "#OPEN_TO_WORK" in img_title.upper()
+            if "#OPEN_TO_WORK" in img_title.upper():
+                return True
+
+            h3_text = await self.safe_extract_text('a.pv-open-to-carousel-card__content h3', default="")
+            if "OPEN TO WORK" in h3_text.upper():
+                return True
+
+            return False
         except:
             return False
     

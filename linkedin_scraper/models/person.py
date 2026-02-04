@@ -21,6 +21,7 @@ class Experience(BaseModel):
     duration: Optional[str] = None
     location: Optional[str] = None
     description: Optional[str] = None
+    #  TODO Add here skills
 
 
 class Education(BaseModel):
@@ -31,6 +32,7 @@ class Education(BaseModel):
     from_date: Optional[str] = None
     to_date: Optional[str] = None
     description: Optional[str] = None
+    #  TODO Add here skills 
 
 
 class Accomplishment(BaseModel):
@@ -38,6 +40,13 @@ class Accomplishment(BaseModel):
     category: str
     title: str
 
+
+class Skill(BaseModel):
+    """Skill model."""
+    name: str
+    endorsements: Optional[int] = None
+    # TODO  Add proven Institution
+    # TODO  Add Passed LinkedIn Skill Assessment flag
 
 class Person(BaseModel):
     """
@@ -55,6 +64,10 @@ class Person(BaseModel):
     interests: List[str] = Field(default_factory=list)
     accomplishments: List[Accomplishment] = Field(default_factory=list)
     contacts: List[Contact] = Field(default_factory=list)
+    skills: List[Skill] = Field(default_factory=list)
+    followers_count: int = 0
+    contact_count: int = 0
+    activity_followers_count: int = 0
     
     @field_validator('linkedin_url')
     @classmethod

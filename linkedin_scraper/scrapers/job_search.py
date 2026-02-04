@@ -4,6 +4,7 @@ Job search scraper for LinkedIn.
 Searches for jobs on LinkedIn and extracts job URLs.
 """
 import logging
+import time
 from typing import Optional, List
 from urllib.parse import urlencode
 from playwright.async_api import Page
@@ -66,8 +67,8 @@ class JobSearchScraper(BaseScraper):
         await self.callback.on_progress("Navigated to search results", 20)
         
         # Wait for job listings to load
-        await self.page.wait_for_selector('.jobs-search__results-list', timeout=10000)
-        await self.wait_and_focus(1)
+        await self.page.wait_for_selector('.jobs-search__results-list', timeout=10000) 
+        await self.wait_and_focus(2)
         
         # Scroll to load more results
         await self.scroll_page_to_bottom(pause_time=1, max_scrolls=3)
